@@ -6,6 +6,8 @@
 import 'dotenv/config'
 import { Buffer } from 'node:buffer'
 import { createHash, randomUUID } from 'node:crypto'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import cors from 'cors'
 import express from 'express'
 import {
@@ -15,6 +17,9 @@ import {
   StorageSharedKeyCredential,
   generateBlobSASQueryParameters,
 } from '@azure/storage-blob'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const DIST_DIR = path.join(__dirname, '../dist')
 
 const PORT = Number(process.env.PORT ?? 3001)
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN ?? 'http://localhost:5173'
@@ -435,9 +440,25 @@ app.post('/api/share-access/:token', async (req, res) => {
 
 setInterval(() => consumeShareIfExpired(), 60 * 1000)
 
+// --- Production: serve Vite React build + client-side routing ---
+app.use(express.static(DIST_DIR))
+
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return next()
+  }
+  if (req.path.startsWith('/api') || req.path.startsWith('/.auth')) {
+    return next()
+  }
+  res.sendFile(path.join(DIST_DIR, 'index.html'), (err) => {
+    if (err) next(err)
+  })
+})
+
 app.listen(PORT, () => {
   console.log(`API listening on http://localhost:${PORT}`)
   console.log(`CORS origin: ${FRONTEND_ORIGIN}`)
+  console.log(`Static (if present): ${DIST_DIR}`)
   if (process.env.MOCK_EASY_AUTH === '1') {
     console.log('MOCK_EASY_AUTH=1 — using MOCK_USER_EMAIL / MOCK_USER_NAME')
   }
