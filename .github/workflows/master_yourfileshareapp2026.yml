@@ -25,11 +25,19 @@ jobs:
       - name: Build React Frontend (Vite)
         run: npm run build
 
+      - name: Prepare deploy package
+        run: |
+          mkdir -p deploy
+          cp -R dist deploy/dist
+          cp -R server deploy/server
+          cp package.json deploy/package.json
+          cp package-lock.json deploy/package-lock.json
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: node-app
-          path: .
+          path: deploy
           retention-days: 1
 
   deploy:
@@ -57,4 +65,4 @@ jobs:
         with:
           app-name: 'yourfileshareapp2026'
           slot-name: 'Production'
-          package: '.'                  # Deploy entire folder (dist + server)
+          package: '.'                  # Deploy the downloaded artifact folder
