@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Menu } from 'lucide-react'
 import { toast } from 'sonner'
-import type { ClientPrincipal } from '@/lib/auth'
 import type { FileRow } from '@/lib/api'
 import { fetchFiles } from '@/lib/api'
 import { FileTable } from '@/components/FileTable'
@@ -14,11 +13,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet'
 
 type Props = {
-  principal: ClientPrincipal
+  user: { email: string; name?: string | null; photoURL?: string | null }
   userEmail: string
+  onLogout: () => void
 }
 
-export function Dashboard({ principal, userEmail }: Props) {
+export function Dashboard({ user, userEmail, onLogout }: Props) {
   const [nav, setNav] = useState<NavKey>('files')
   const [files, setFiles] = useState<FileRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -58,7 +58,8 @@ export function Dashboard({ principal, userEmail }: Props) {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <Header
-          principal={principal}
+          user={user}
+          onLogout={onLogout}
           leading={
             <div className="lg:hidden">
               <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>

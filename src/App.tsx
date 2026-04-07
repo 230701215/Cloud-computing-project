@@ -1,19 +1,20 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AlertCircle, Loader2 } from 'lucide-react'
+import { onAuthStateChanged, signOut, type User } from 'firebase/auth'
 import { toast } from 'sonner'
-import type { ClientPrincipal } from '@/lib/auth'
-import { loadAuthSession, userEmail } from '@/lib/auth'
+import { auth } from '@/firebase'
+import { setIdToken } from '@/lib/authToken'
 import { Dashboard } from '@/pages/Dashboard'
+import { Login } from '@/pages/Login'
 import { SharedPage } from '@/pages/SharedPage'
-import { SignIn } from '@/pages/SignIn'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 
 type AuthState =
   | { status: 'loading' }
   | { status: 'error'; message: string }
-  | { status: 'ready'; principal: ClientPrincipal | null }
+  | { status: 'ready'; user: User | null; idToken: string | null }
 
 function AuthLoading() {
   return (
@@ -21,7 +22,7 @@ function AuthLoading() {
       <Loader2 className="size-10 animate-spin text-primary" aria-hidden />
       <div className="text-center">
         <p className="text-sm font-medium text-foreground">Checking your session</p>
-        <p className="mt-1 text-xs text-muted-foreground">Contacting /.auth/me…</p>
+        <p className="mt-1 text-xs text-muted-foreground">Contacting Firebase…</p>
       </div>
     </div>
   )
@@ -55,38 +56,64 @@ function AuthErrorScreen({ message, onRetry }: { message: string; onRetry: () =>
 }
 
 function MainShell() {
-  const [auth, setAuth] = useState<AuthState>({ status: 'loading' })
-
-  const runAuth = useCallback(async () => {
-    setAuth({ status: 'loading' })
-    const result = await loadAuthSession()
-    if (!result.ok) {
-      setAuth({ status: 'error', message: result.error })
-      toast.error('Session check failed', { description: result.error })
-      return
-    }
-    setAuth({ status: 'ready', principal: result.principal })
-  }, [])
+  const [authState, setAuthState] = useState<AuthState>({ status: 'loading' })
 
   useEffect(() => {
-    void runAuth()
-  }, [runAuth])
+    setAuthState({ status: 'loading' })
+    const unsub = onAuthStateChanged(
+      auth,
+      async (user) => {
+        try {
+          if (!user) {
+            setIdToken(null)
+            setAuthState({ status: 'ready', user: null, idToken: null })
+            return
+          }
+          const token = await user.getIdToken()
+          setIdToken(token)
+          setAuthState({ status: 'ready', user, idToken: token })
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : 'Could not load session.'
+          setAuthState({ status: 'error', message: msg })
+          toast.error('Auth error', { description: msg })
+        }
+      },
+      (err) => {
+        setAuthState({ status: 'error', message: err.message })
+        toast.error('Auth error', { description: err.message })
+      },
+    )
+    return () => unsub()
+  }, [])
 
-  if (auth.status === 'loading') {
+  if (authState.status === 'loading') {
     return <AuthLoading />
   }
 
-  if (auth.status === 'error') {
-    return <AuthErrorScreen message={auth.message} onRetry={runAuth} />
+  if (authState.status === 'error') {
+    return <AuthErrorScreen message={authState.message} onRetry={() => window.location.reload()} />
   }
 
-  const { principal } = auth
-  if (!principal) {
-    return <SignIn />
+  const { user } = authState
+  if (!user) return <Login />
+
+  const logout = async () => {
+    try {
+      await signOut(auth)
+      setIdToken(null)
+      toast.success('Signed out')
+    } catch (e) {
+      toast.error('Sign out failed', { description: e instanceof Error ? e.message : 'Unknown error' })
+    }
   }
 
-  const email = userEmail(principal)
-  return <Dashboard principal={principal} userEmail={email} />
+  return (
+    <Dashboard
+      user={{ email: user.email ?? '', name: user.displayName, photoURL: user.photoURL }}
+      userEmail={user.email ?? ''}
+      onLogout={logout}
+    />
+  )
 }
 
 export default function App() {

@@ -11,8 +11,15 @@ export type FileRow = {
   lastModified: string
 }
 
+function authHeaders(extra?: HeadersInit): HeadersInit {
+  const token = localStorage.getItem('fileshare.firebaseIdToken')
+  const base: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
+  if (!extra) return base
+  return { ...base, ...(extra as Record<string, string>) }
+}
+
 export async function fetchMe(): Promise<ApiUser | null> {
-  const res = await fetch('/api/me', { credentials: 'include' })
+  const res = await fetch('/api/me', { headers: authHeaders() })
   if (res.status === 401) return null
   if (!res.ok) throw new Error('Failed to load profile')
   const data = (await res.json()) as { user: ApiUser }
@@ -20,7 +27,7 @@ export async function fetchMe(): Promise<ApiUser | null> {
 }
 
 export async function fetchFiles(): Promise<FileRow[]> {
-  const res = await fetch('/api/files', { credentials: 'include' })
+  const res = await fetch('/api/files', { headers: authHeaders() })
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as { error?: string }
     throw new Error(err.error ?? 'Failed to list files')
@@ -32,8 +39,7 @@ export async function fetchFiles(): Promise<FileRow[]> {
 export async function requestSasUpload(fileName: string, contentType?: string) {
   const res = await fetch('/api/sas-upload', {
     method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ fileName, contentType }),
   })
   if (!res.ok) {
@@ -47,7 +53,7 @@ export async function deleteFile(blobName: string) {
   const q = new URLSearchParams({ name: blobName })
   const res = await fetch(`/api/files?${q.toString()}`, {
     method: 'DELETE',
-    credentials: 'include',
+    headers: authHeaders(),
   })
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as { error?: string }
@@ -57,7 +63,7 @@ export async function deleteFile(blobName: string) {
 
 export async function getDownloadUrl(blobName: string) {
   const q = new URLSearchParams({ name: blobName })
-  const res = await fetch(`/api/files/download?${q.toString()}`, { credentials: 'include' })
+  const res = await fetch(`/api/files/download?${q.toString()}`, { headers: authHeaders() })
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as { error?: string }
     throw new Error(err.error ?? 'Download failed')
@@ -78,8 +84,7 @@ export async function createShare(blobName: string, expiresAt: Date, password?: 
   const segment = sharePathSegment(blobName)
   const res = await fetch(`/api/share/${segment}`, {
     method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({
       expiresAt: expiresAt.toISOString(),
       ...(password && password.length > 0 ? { password } : {}),
@@ -104,7 +109,6 @@ export class ShareAccessError extends Error {
 export async function redeemShare(token: string, password?: string) {
   const res = await fetch(`/api/share-access/${encodeURIComponent(token)}`, {
     method: 'POST',
-    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password: password ?? '' }),
   })

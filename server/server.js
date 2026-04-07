@@ -17,6 +17,7 @@ import {
   StorageSharedKeyCredential,
   generateBlobSASQueryParameters,
 } from '@azure/storage-blob'
+import { getAdmin } from './firebaseAdmin.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST_DIR = path.join(__dirname, '../dist')
@@ -145,66 +146,28 @@ function sasReadUrl(blobName, expiresOn) {
   return `${blob.url}?${sas}`
 }
 
-// --- Easy Auth: decode X-MS-CLIENT-PRINCIPAL (base64 JSON) ---
-function claim(claims, ...types) {
-  if (!claims?.length) return undefined
-  for (const t of types) {
-    const c = claims.find((x) => x.typ === t)
-    if (c?.val) return c.val
-  }
-  return undefined
-}
-
-function decodeMsClientPrincipal(headerValue) {
-  if (!headerValue) return null
+async function verifyFirebaseToken(req, res, next) {
   try {
-    const json = Buffer.from(headerValue, 'base64').toString('utf8')
-    const payload = JSON.parse(json)
-    const claims = payload.claims ?? []
-    const email =
-      claim(
-        claims,
-        'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress',
-        'emails',
-        'preferred_username',
-      ) ?? claim(claims, 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/upn')
-    const name =
-      claim(claims, 'name', 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name') ?? email
-    const userId =
-      claim(claims, 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier', 'sub', 'oid') ??
-      email ??
-      'unknown'
-    const picture = claim(claims, 'picture')
-    if (!email) return null
-    return { userId, email, name: name ?? email, picture }
-  } catch {
-    return null
-  }
-}
+    const header = req.headers.authorization || ''
+    const m = /^Bearer\\s+(.+)$/i.exec(header)
+    const token = m?.[1]
+    if (!token) return res.status(401).json({ error: 'Missing Authorization Bearer token' })
 
-function getUserFromRequest(req) {
-  if (process.env.MOCK_EASY_AUTH === '1') {
-    return {
-      userId: 'mock-id',
-      email: process.env.MOCK_USER_EMAIL ?? 'dev@local.test',
-      name: process.env.MOCK_USER_NAME ?? 'Local Dev',
-      picture: process.env.MOCK_USER_PICTURE,
+    const admin = getAdmin()
+    const decoded = await admin.auth().verifyIdToken(token)
+    if (!decoded.email) return res.status(401).json({ error: 'Token missing email claim' })
+
+    req.user = {
+      uid: decoded.uid,
+      email: decoded.email,
+      name: decoded.name,
+      picture: decoded.picture,
     }
-  }
-  return decodeMsClientPrincipal(req.headers['x-ms-client-principal'])
-}
 
-function toClientPrincipal(user) {
-  return {
-    identityProvider: 'easyauth',
-    userId: user.userId,
-    userDetails: user.email,
-    userRoles: [],
-    claims: [
-      { typ: 'name', val: user.name },
-      { typ: 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress', val: user.email },
-      ...(user.picture ? [{ typ: 'picture', val: user.picture }] : []),
-    ],
+    return next()
+  } catch (e) {
+    console.error(e)
+    return res.status(401).json({ error: 'Invalid or expired token' })
   }
 }
 
@@ -228,46 +191,26 @@ app.use(
 )
 app.use(express.json({ limit: '2mb' }))
 
-function requireUser(req, res) {
-  const user = getUserFromRequest(req)
-  if (!user) {
-    res.status(401).json({ error: 'Not authenticated' })
-    return null
-  }
-  return user
-}
-
-// --- Easy Auth mirror (local dev / proxy) ---
-app.get('/.auth/me', (req, res) => {
-  const user = getUserFromRequest(req)
-  if (!user) return res.json({ clientPrincipal: null })
-  return res.json({ clientPrincipal: toClientPrincipal(user) })
-})
-
-app.get('/.auth/logout', (_req, res) => {
-  res.redirect(302, `${FRONTEND_ORIGIN}/`)
-})
+// --- Firebase Auth replaces Easy Auth ---
 
 // --- Core routes (spec) ---
 
 /** GET /api/me — user from X-MS-CLIENT-PRINCIPAL */
-app.get('/api/me', (req, res) => {
-  const user = requireUser(req, res)
-  if (!user) return
+app.get('/api/me', verifyFirebaseToken, (req, res) => {
+  const user = req.user
   res.json({
     user: {
-      id: user.userId,
+      id: user.uid,
       email: user.email,
-      name: user.name,
+      name: user.name ?? user.email,
       picture: user.picture,
     },
   })
 })
 
 /** POST /api/sas-upload — write SAS (15 min), blob under user email prefix */
-app.post('/api/sas-upload', async (req, res) => {
-  const user = requireUser(req, res)
-  if (!user) return
+app.post('/api/sas-upload', verifyFirebaseToken, async (req, res) => {
+  const user = req.user
   try {
     await ensureContainer()
   } catch (e) {
@@ -289,9 +232,8 @@ app.post('/api/sas-upload', async (req, res) => {
 })
 
 /** GET /api/files — list blobs with user prefix */
-app.get('/api/files', async (req, res) => {
-  const user = requireUser(req, res)
-  if (!user) return
+app.get('/api/files', verifyFirebaseToken, async (req, res) => {
+  const user = req.user
   try {
     await ensureContainer()
     const files = await listUserBlobs(user.email)
@@ -307,36 +249,36 @@ app.get('/api/files', async (req, res) => {
  * Returns shareUrl (full blob URL + SAS query).
  */
 app.get('/api/share/:blobName', async (req, res) => {
-  const user = requireUser(req, res)
-  if (!user) return
-  const blobName = decodeBlobPathSegment(req.params.blobName)
-  if (!blobName) return res.status(400).json({ error: 'Invalid blobName segment' })
-  try {
-    assertOwnsBlob(user.email, blobName)
-  } catch (e) {
-    const status = e.status ?? 403
-    return res.status(status).json({ error: 'Forbidden' })
-  }
-  try {
-    await ensureContainer()
-    const expiresOn = new Date(Date.now() + SHARE_READ_HOURS * 60 * 60 * 1000)
-    const shareUrl = sasReadUrl(blobName, expiresOn)
-    return res.json({
-      shareUrl,
-      blobName,
-      expiresAt: expiresOn.toISOString(),
-    })
-  } catch (e) {
-    console.error(e)
-    return res.status(503).json({ error: 'Could not create share URL' })
-  }
+  return verifyFirebaseToken(req, res, async () => {
+    const user = req.user
+    const blobName = decodeBlobPathSegment(req.params.blobName)
+    if (!blobName) return res.status(400).json({ error: 'Invalid blobName segment' })
+    try {
+      assertOwnsBlob(user.email, blobName)
+    } catch (e) {
+      const status = e.status ?? 403
+      return res.status(status).json({ error: 'Forbidden' })
+    }
+    try {
+      await ensureContainer()
+      const expiresOn = new Date(Date.now() + SHARE_READ_HOURS * 60 * 60 * 1000)
+      const shareUrl = sasReadUrl(blobName, expiresOn)
+      return res.json({
+        shareUrl,
+        blobName,
+        expiresAt: expiresOn.toISOString(),
+      })
+    } catch (e) {
+      console.error(e)
+      return res.status(503).json({ error: 'Could not create share URL' })
+    }
+  })
 })
 
 // --- Extra routes used by the SPA ---
 
-app.delete('/api/files', async (req, res) => {
-  const user = requireUser(req, res)
-  if (!user) return
+app.delete('/api/files', verifyFirebaseToken, async (req, res) => {
+  const user = req.user
   const blobName = typeof req.query.name === 'string' ? req.query.name : ''
   if (!blobName) return res.status(400).json({ error: 'Missing name' })
   try {
@@ -351,9 +293,8 @@ app.delete('/api/files', async (req, res) => {
   }
 })
 
-app.get('/api/files/download', async (req, res) => {
-  const user = requireUser(req, res)
-  if (!user) return
+app.get('/api/files/download', verifyFirebaseToken, async (req, res) => {
+  const user = req.user
   const blobName = typeof req.query.name === 'string' ? req.query.name : ''
   if (!blobName) return res.status(400).json({ error: 'Missing name' })
   try {
@@ -371,45 +312,46 @@ app.get('/api/files/download', async (req, res) => {
 
 /** POST /api/share/:blobName — custom expiry + optional password (SPA) */
 app.post('/api/share/:blobName', async (req, res) => {
-  const user = requireUser(req, res)
-  if (!user) return
-  const blobName = decodeBlobPathSegment(req.params.blobName)
-  if (!blobName) return res.status(400).json({ error: 'Invalid blobName segment' })
-  try {
-    assertOwnsBlob(user.email, blobName)
-  } catch {
-    return res.status(403).json({ error: 'Forbidden' })
-  }
-  const expiresAtRaw = req.body?.expiresAt
-  const expiresAt = typeof expiresAtRaw === 'string' ? new Date(expiresAtRaw) : null
-  if (!expiresAt || Number.isNaN(expiresAt.getTime())) {
-    return res.status(400).json({ error: 'Invalid expiresAt' })
-  }
-  const password = typeof req.body?.password === 'string' ? req.body.password : undefined
-  consumeShareIfExpired()
-  try {
-    await ensureContainer()
-    const passwordHash = password && password.length > 0 ? hashPassword(password) : undefined
-    if (!passwordHash) {
-      const url = sasReadUrl(blobName, expiresAt)
-      return res.json({
-        shareUrl: url,
-        expiresAt: expiresAt.toISOString(),
-        token: null,
-      })
+  return verifyFirebaseToken(req, res, async () => {
+    const user = req.user
+    const blobName = decodeBlobPathSegment(req.params.blobName)
+    if (!blobName) return res.status(400).json({ error: 'Invalid blobName segment' })
+    try {
+      assertOwnsBlob(user.email, blobName)
+    } catch {
+      return res.status(403).json({ error: 'Forbidden' })
     }
-    const token = randomUUID()
-    shareStore.set(token, { blobName, expiresAt, passwordHash })
-    const shareUrl = `${FRONTEND_ORIGIN}/shared/${token}`
-    return res.json({
-      shareUrl,
-      expiresAt: expiresAt.toISOString(),
-      token,
-    })
-  } catch (e) {
-    console.error(e)
-    return res.status(503).json({ error: 'Could not create share link' })
-  }
+    const expiresAtRaw = req.body?.expiresAt
+    const expiresAt = typeof expiresAtRaw === 'string' ? new Date(expiresAtRaw) : null
+    if (!expiresAt || Number.isNaN(expiresAt.getTime())) {
+      return res.status(400).json({ error: 'Invalid expiresAt' })
+    }
+    const password = typeof req.body?.password === 'string' ? req.body.password : undefined
+    consumeShareIfExpired()
+    try {
+      await ensureContainer()
+      const passwordHash = password && password.length > 0 ? hashPassword(password) : undefined
+      if (!passwordHash) {
+        const url = sasReadUrl(blobName, expiresAt)
+        return res.json({
+          shareUrl: url,
+          expiresAt: expiresAt.toISOString(),
+          token: null,
+        })
+      }
+      const token = randomUUID()
+      shareStore.set(token, { blobName, expiresAt, passwordHash })
+      const shareUrl = `${FRONTEND_ORIGIN}/shared/${token}`
+      return res.json({
+        shareUrl,
+        expiresAt: expiresAt.toISOString(),
+        token,
+      })
+    } catch (e) {
+      console.error(e)
+      return res.status(503).json({ error: 'Could not create share link' })
+    }
+  })
 })
 
 app.post('/api/share-access/:token', async (req, res) => {

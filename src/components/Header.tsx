@@ -1,7 +1,5 @@
 import type { ReactNode } from 'react'
 import { LogOut } from 'lucide-react'
-import type { ClientPrincipal } from '@/lib/auth'
-import { avatarUrl, displayName, logoutHref } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -16,9 +14,10 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 type Props = {
-  principal: ClientPrincipal | null
+  user: { email: string; name?: string | null; photoURL?: string | null } | null
   /** Shown before the title area (e.g. mobile nav sheet trigger). */
   leading?: ReactNode
+  onLogout?: () => void
 }
 
 function initials(name: string) {
@@ -28,9 +27,9 @@ function initials(name: string) {
   return (a + b).toUpperCase()
 }
 
-export function Header({ principal, leading }: Props) {
-  const name = displayName(principal)
-  const pic = avatarUrl(principal)
+export function Header({ user, leading, onLogout }: Props) {
+  const name = user?.name || user?.email || 'Guest'
+  const pic = user?.photoURL || undefined
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border bg-card/40 px-3 sm:px-4">
@@ -56,15 +55,13 @@ export function Header({ principal, leading }: Props) {
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col gap-0.5">
                 <span className="truncate font-medium">{name}</span>
-                {principal?.userDetails ? (
-                  <span className="truncate text-xs text-muted-foreground">{principal.userDetails}</span>
-                ) : null}
+                {user?.email ? <span className="truncate text-xs text-muted-foreground">{user.email}</span> : null}
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onClick={() => {
-                window.location.href = logoutHref()
+                onLogout?.()
               }}
             >
               <LogOut className="size-4" />
@@ -72,12 +69,13 @@ export function Header({ principal, leading }: Props) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <a
-          href={logoutHref()}
+        <button
+          type="button"
+          onClick={() => onLogout?.()}
           className={cn(buttonVariants({ variant: 'outline', size: 'sm' }), 'hidden sm:inline-flex')}
         >
           Log out
-        </a>
+        </button>
       </div>
     </header>
   )
