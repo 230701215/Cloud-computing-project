@@ -391,11 +391,9 @@ app.use((req, res, next) => {
   })
 })
 
-app.listen(PORT, () => {
-  console.log(`API listening on http://localhost:${PORT}`)
+// Bind to 0.0.0.0 for Azure App Service/container environments.
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`API listening on port ${PORT}`)
   console.log(`CORS origin: ${FRONTEND_ORIGIN}`)
   console.log(`Static (if present): ${DIST_DIR}`)
-  if (process.env.MOCK_EASY_AUTH === '1') {
-    console.log('MOCK_EASY_AUTH=1 — using MOCK_USER_EMAIL / MOCK_USER_NAME')
-  }
 })
