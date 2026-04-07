@@ -1,20 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { AlertCircle, Loader2 } from 'lucide-react'
-import { onAuthStateChanged, signOut, type User } from 'firebase/auth'
 import { toast } from 'sonner'
-import { auth } from '@/firebase'
-import { setIdToken } from '@/lib/authToken'
+import { AuthProvider, useAuth } from '@/lib/AuthContext'
 import { Dashboard } from '@/pages/Dashboard'
 import { Login } from '@/pages/Login'
 import { SharedPage } from '@/pages/SharedPage'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-
-type AuthState =
-  | { status: 'loading' }
-  | { status: 'error'; message: string }
-  | { status: 'ready'; user: User | null; idToken: string | null }
 
 function AuthLoading() {
   return (
@@ -56,56 +49,15 @@ function AuthErrorScreen({ message, onRetry }: { message: string; onRetry: () =>
 }
 
 function MainShell() {
-  const [authState, setAuthState] = useState<AuthState>({ status: 'loading' })
+  const { user, loading, error, logout } = useAuth()
 
   useEffect(() => {
-    setAuthState({ status: 'loading' })
-    const unsub = onAuthStateChanged(
-      auth,
-      async (user) => {
-        try {
-          if (!user) {
-            setIdToken(null)
-            setAuthState({ status: 'ready', user: null, idToken: null })
-            return
-          }
-          const token = await user.getIdToken()
-          setIdToken(token)
-          setAuthState({ status: 'ready', user, idToken: token })
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : 'Could not load session.'
-          setAuthState({ status: 'error', message: msg })
-          toast.error('Auth error', { description: msg })
-        }
-      },
-      (err) => {
-        setAuthState({ status: 'error', message: err.message })
-        toast.error('Auth error', { description: err.message })
-      },
-    )
-    return () => unsub()
-  }, [])
+    if (error) toast.error('Auth error', { description: error })
+  }, [error])
 
-  if (authState.status === 'loading') {
-    return <AuthLoading />
-  }
-
-  if (authState.status === 'error') {
-    return <AuthErrorScreen message={authState.message} onRetry={() => window.location.reload()} />
-  }
-
-  const { user } = authState
+  if (loading) return <AuthLoading />
+  if (error) return <AuthErrorScreen message={error} onRetry={() => window.location.reload()} />
   if (!user) return <Login />
-
-  const logout = async () => {
-    try {
-      await signOut(auth)
-      setIdToken(null)
-      toast.success('Signed out')
-    } catch (e) {
-      toast.error('Sign out failed', { description: e instanceof Error ? e.message : 'Unknown error' })
-    }
-  }
 
   return (
     <Dashboard
@@ -119,10 +71,12 @@ function MainShell() {
 export default function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/shared/:token" element={<SharedPage />} />
-        <Route path="*" element={<MainShell />} />
-      </Routes>
+      <AuthProvider>
+        <Routes>
+          <Route path="/shared/:token" element={<SharedPage />} />
+          <Route path="*" element={<MainShell />} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   )
 }

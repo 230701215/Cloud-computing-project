@@ -1,19 +1,18 @@
 import { useState } from 'react'
-import { signInWithPopup } from 'firebase/auth'
 import { ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
-import { auth, googleProvider } from '@/firebase'
+import { useAuth } from '@/lib/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
 export function Login() {
   const [loading, setLoading] = useState(false)
+  const { signInWithGoogle } = useAuth()
 
   async function signIn() {
     setLoading(true)
     try {
-      await signInWithPopup(auth, googleProvider)
-      toast.success('Signed in')
+      await signInWithGoogle()
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Sign-in failed'
       toast.error('Sign-in failed', { description: msg })

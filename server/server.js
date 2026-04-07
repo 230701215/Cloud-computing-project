@@ -4,7 +4,6 @@
  *      FRONTEND_ORIGIN (CORS), PORT, MOCK_EASY_AUTH, MOCK_USER_EMAIL, MOCK_USER_NAME
  */
 import 'dotenv/config'
-import { Buffer } from 'node:buffer'
 import { createHash, randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -157,12 +156,7 @@ async function verifyFirebaseToken(req, res, next) {
     const decoded = await admin.auth().verifyIdToken(token)
     if (!decoded.email) return res.status(401).json({ error: 'Token missing email claim' })
 
-    req.user = {
-      uid: decoded.uid,
-      email: decoded.email,
-      name: decoded.name,
-      picture: decoded.picture,
-    }
+    req.user = decoded
 
     return next()
   } catch (e) {

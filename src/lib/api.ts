@@ -11,8 +11,10 @@ export type FileRow = {
   lastModified: string
 }
 
+import { getIdToken } from '@/lib/authToken'
+
 function authHeaders(extra?: HeadersInit): HeadersInit {
-  const token = localStorage.getItem('fileshare.firebaseIdToken')
+  const token = getIdToken()
   const base: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
   if (!extra) return base
   return { ...base, ...(extra as Record<string, string>) }
