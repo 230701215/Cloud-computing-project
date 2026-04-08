@@ -1,5 +1,5 @@
 /**
- * Express API for Azure Blob Storage + Firebase Auth
+ * Express API for Azure Blob Storage + Firebase Auth - FINAL FIXED VERSION
  */
 
 import 'dotenv/config';
@@ -42,7 +42,7 @@ function consumeShareIfExpired() {
   }
 }
 
-// --- Storage Setup ---
+// Storage Setup
 let storageCache = null;
 
 function getStorage() {
@@ -113,17 +113,14 @@ function sasWriteUrl(blobName, expiresMsFromNow) {
   const startsOn = new Date(Date.now() - 5 * 60 * 1000);
   const expiresOn = new Date(Date.now() + expiresMsFromNow);
 
-  const sas = generateBlobSASQueryParameters(
-    {
-      containerName: CONTAINER,
-      blobName,
-      permissions: BlobSASPermissions.parse('cw'),
-      startsOn,
-      expiresOn,
-      protocol: SASProtocol.Https,
-    },
-    credential
-  ).toString();
+  const sas = generateBlobSASQueryParameters({
+    containerName: CONTAINER,
+    blobName,
+    permissions: BlobSASPermissions.parse('cw'),
+    startsOn,
+    expiresOn,
+    protocol: SASProtocol.Https,
+  }, credential).toString();
 
   return { uploadUrl: `${blob.url}?${sas}`, expiresOn };
 }
@@ -134,17 +131,14 @@ function sasReadUrl(blobName, expiresOn) {
   const blob = container.getBlockBlobClient(blobName);
   const startsOn = new Date(Date.now() - 5 * 60 * 1000);
 
-  const sas = generateBlobSASQueryParameters(
-    {
-      containerName: CONTAINER,
-      blobName,
-      permissions: BlobSASPermissions.parse('r'),
-      startsOn,
-      expiresOn,
-      protocol: SASProtocol.Https,
-    },
-    credential
-  ).toString();
+  const sas = generateBlobSASQueryParameters({
+    containerName: CONTAINER,
+    blobName,
+    permissions: BlobSASPermissions.parse('r'),
+    startsOn,
+    expiresOn,
+    protocol: SASProtocol.Https,
+  }, credential).toString();
 
   return `${blob.url}?${sas}`;
 }
@@ -156,15 +150,11 @@ async function verifyFirebaseToken(req, res, next) {
     const match = /^Bearer\s+(.+)$/i.exec(header);
     const token = match?.[1];
 
-    if (!token) {
-      return res.status(401).json({ error: 'Missing Authorization Bearer token' });
-    }
+    if (!token) return res.status(401).json({ error: 'Missing Authorization Bearer token' });
 
     const admin = getAdmin();
     const decoded = await admin.auth().verifyIdToken(token);
-    if (!decoded.email) {
-      return res.status(401).json({ error: 'Token missing email claim' });
-    }
+    if (!decoded.email) return res.status(401).json({ error: 'Token missing email claim' });
 
     req.user = decoded;
     next();
@@ -176,33 +166,19 @@ async function verifyFirebaseToken(req, res, next) {
 
 const app = express();
 
-app.use(cors({
-  origin: FRONTEND_ORIGIN,
-  credentials: true,
-}));
-
+app.use(cors({ origin: FRONTEND_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 
-// ====================== API ROUTES ======================
-
+// API Routes
 app.get('/api/me', verifyFirebaseToken, (req, res) => {
-  res.json({
-    user: {
-      id: req.user.uid,
-      email: req.user.email,
-      name: req.user.name ?? req.user.email,
-      picture: req.user.picture,
-    },
-  });
+  res.json({ user: req.user });
 });
 
 app.post('/api/sas-upload', verifyFirebaseToken, async (req, res) => {
   const user = req.user;
-  const fileName = typeof req.body?.fileName === 'string' ? req.body.fileName : '';
+  const fileName = req.body?.fileName || '';
 
-  if (!fileName || fileName.includes('..') || fileName.startsWith('/')) {
-    return res.status(400).json({ error: 'Invalid fileName' });
-  }
+  if (!fileName) return res.status(400).json({ error: 'Invalid fileName' });
 
   try {
     await ensureContainer();
@@ -226,31 +202,31 @@ app.get('/api/files', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// ====================== STATIC FILES + SPA ROUTING ======================
+// ====================== STATIC + SPA ROUTING ======================
 
 console.log('Current directory:', __dirname);
-console.log('DIST_DIR path:', DIST_DIR);
-console.log('Does dist folder exist?', fs.existsSync(DIST_DIR));
+console.log('DIST_DIR:', DIST_DIR);
+console.log('dist folder exists?', fs.existsSync(DIST_DIR));
 
-// Serve React build
+// Serve static files from dist
 app.use(express.static(DIST_DIR));
 
-// Catch-all for React SPA - Final safe version
-app.get('*', (req, res) => {
+// Final catch-all for React SPA - Safe for Express 5
+app.use((req, res) => {
   if (req.path.startsWith('/api')) {
     return res.status(404).json({ error: 'API route not found' });
   }
   console.log(`Serving index.html for path: ${req.path}`);
   res.sendFile(path.join(DIST_DIR, 'index.html'), (err) => {
     if (err) {
-      console.error('Error serving index.html:', err);
-      res.status(500).send('Build files not found. Please check if "npm run build" succeeded.');
+      console.error('Failed to serve index.html:', err);
+      res.status(500).send('React build not found. Run "npm run build" locally and push again.');
     }
   });
 });
 
-// Start Server
+// Start the server
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Server is running on port ${PORT}`);
-  console.log(`📁 Serving static files from: ${DIST_DIR}`);
+  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`📁 Static files from: ${DIST_DIR}`);
 });
