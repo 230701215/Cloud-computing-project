@@ -226,8 +226,7 @@ app.get('/api/files', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// Keep your other routes (delete, download, share, etc.) as they are
-// ... (your existing delete, download, share routes go here)
+// Add your other routes here (delete, download, share, etc.) if needed
 
 // ====================== STATIC FILES + SPA ROUTING ======================
 
@@ -238,7 +237,7 @@ console.log('Does dist folder exist?', fs.existsSync(DIST_DIR));
 // Serve React build
 app.use(express.static(DIST_DIR));
 
-// Catch-all route for React SPA - MUST BE LAST
+// Catch-all for React SPA - MUST BE LAST
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api')) {
     return next();
@@ -247,7 +246,7 @@ app.get('*', (req, res, next) => {
   res.sendFile(path.join(DIST_DIR, 'index.html'), (err) => {
     if (err) {
       console.error('Error serving index.html:', err);
-      res.status(500).send('Build files not found. Please check deployment logs.');
+      res.status(500).send('Build files not found. Please check deployment.');
     }
   });
 });
@@ -256,5 +255,4 @@ app.get('*', (req, res, next) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Server is running on port ${PORT}`);
   console.log(`📁 Serving static files from: ${DIST_DIR}`);
-  console.log(`🌐 Frontend should be available at the app URL`);
 });
