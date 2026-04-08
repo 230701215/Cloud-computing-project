@@ -11,7 +11,7 @@
   "start": "node server/server.js",
   "preview": "vite preview",
   "lint": "eslint ."
-},
+  },
   "dependencies": {
     "@azure/identity": "^4.13.1",
     "@azure/storage-blob": "^12.31.0",
