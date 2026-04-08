@@ -226,8 +226,6 @@ app.get('/api/files', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// Add your other routes here (delete, download, share, etc.) if needed
-
 // ====================== STATIC FILES + SPA ROUTING ======================
 
 console.log('Current directory:', __dirname);
@@ -237,8 +235,8 @@ console.log('Does dist folder exist?', fs.existsSync(DIST_DIR));
 // Serve React build
 app.use(express.static(DIST_DIR));
 
-// Catch-all for React SPA - MUST BE LAST
-app.get('*', (req, res, next) => {
+// Catch-all for React SPA - FIXED: Use a safer pattern for Express 5
+app.get('/*', (req, res, next) => {
   if (req.path.startsWith('/api')) {
     return next();
   }
