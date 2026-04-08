@@ -235,19 +235,16 @@ console.log('Does dist folder exist?', fs.existsSync(DIST_DIR));
 // Serve React build
 app.use(express.static(DIST_DIR));
 
-// Catch-all for React SPA - FIXED for Express 5
-app.use((req, res, next) => {
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    return next();
-  }
+// Catch-all for React SPA - Final safe version
+app.get('*', (req, res) => {
   if (req.path.startsWith('/api')) {
-    return next();
+    return res.status(404).json({ error: 'API route not found' });
   }
   console.log(`Serving index.html for path: ${req.path}`);
   res.sendFile(path.join(DIST_DIR, 'index.html'), (err) => {
     if (err) {
       console.error('Error serving index.html:', err);
-      res.status(500).send('Build files not found. Please check deployment.');
+      res.status(500).send('Build files not found. Please check if "npm run build" succeeded.');
     }
   });
 });
