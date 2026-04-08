@@ -8,8 +8,8 @@
   "dev:web": "vite",
   "dev:api": "node --watch server/server.js",
   "build": "vite build",
-  "preview": "vite preview",
   "start": "node server/server.js",
+  "preview": "vite preview",
   "lint": "eslint ."
 },
   "dependencies": {
