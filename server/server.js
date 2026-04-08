@@ -235,8 +235,11 @@ console.log('Does dist folder exist?', fs.existsSync(DIST_DIR));
 // Serve React build
 app.use(express.static(DIST_DIR));
 
-// Catch-all for React SPA - FIXED: Use a safer pattern for Express 5
-app.get('/*', (req, res, next) => {
+// Catch-all for React SPA - FIXED for Express 5
+app.use((req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    return next();
+  }
   if (req.path.startsWith('/api')) {
     return next();
   }
