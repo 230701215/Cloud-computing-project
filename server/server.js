@@ -1,5 +1,5 @@
 /**
- * Express API for Azure Blob Storage + Firebase Auth - SHARE FIXED
+ * Express API for Azure Blob Storage + Firebase Auth - STABLE FULL VERSION
  */
 
 import 'dotenv/config';
@@ -62,6 +62,28 @@ async function ensureContainer() {
   await container.createIfNotExists();
 }
 
+async function listUserBlobs(email) {
+  const { blobService } = getStorage();
+  const container = blobService.getContainerClient(CONTAINER);
+  const prefix = userPrefix(email);
+  const files = [];
+  for await (const item of container.listBlobsFlat({ prefix })) {
+    if (!item.name || item.name.endsWith('/')) continue;
+    files.push({
+      name: item.name,
+      size: item.properties.contentLength ?? 0,
+      lastModified: item.properties.lastModified?.toISOString() ?? new Date().toISOString(),
+    });
+  }
+  return files;
+}
+
+async function deleteBlob(blobName) {
+  const { blobService } = getStorage();
+  const container = blobService.getContainerClient(CONTAINER);
+  await container.deleteBlob(blobName);
+}
+
 function sasReadUrl(blobName, expiresOn) {
   const { blobService, credential } = getStorage();
   const container = blobService.getContainerClient(CONTAINER);
@@ -78,6 +100,25 @@ function sasReadUrl(blobName, expiresOn) {
   }, credential).toString();
 
   return `${blob.url}?${sas}`;
+}
+
+function sasWriteUrl(blobName, expiresMsFromNow) {
+  const { blobService, credential } = getStorage();
+  const container = blobService.getContainerClient(CONTAINER);
+  const blob = container.getBlockBlobClient(blobName);
+  const startsOn = new Date(Date.now() - 5 * 60 * 1000);
+  const expiresOn = new Date(Date.now() + expiresMsFromNow);
+
+  const sas = generateBlobSASQueryParameters({
+    containerName: CONTAINER,
+    blobName,
+    permissions: BlobSASPermissions.parse('cw'),
+    startsOn,
+    expiresOn,
+    protocol: SASProtocol.Https,
+  }, credential).toString();
+
+  return { uploadUrl: `${blob.url}?${sas}`, expiresOn };
 }
 
 // Firebase Token Verification Middleware
@@ -120,7 +161,7 @@ app.post('/api/sas-upload', verifyFirebaseToken, async (req, res) => {
   try {
     await ensureContainer();
     const blobName = `${userPrefix(user.email)}${fileName}`;
-    const { uploadUrl, expiresOn } = sasWriteUrl(blobName, UPLOAD_SAS_MINUTES * 60 * 1000); // reuse your sasWriteUrl if needed
+    const { uploadUrl, expiresOn } = sasWriteUrl(blobName, UPLOAD_SAS_MINUTES * 60 * 1000);
     res.json({ uploadUrl, blobName, sasExpiresAt: expiresOn.toISOString() });
   } catch (e) {
     console.error(e);
@@ -131,10 +172,10 @@ app.post('/api/sas-upload', verifyFirebaseToken, async (req, res) => {
 app.get('/api/files', verifyFirebaseToken, async (req, res) => {
   try {
     await ensureContainer();
-    const files = await listUserBlobs(req.user.email); // reuse your function
+    const files = await listUserBlobs(req.user.email);
     res.json({ files });
   } catch (e) {
-    console.error(e);
+    console.error('List files error:', e);
     res.status(503).json({ error: 'Could not list files', files: [] });
   }
 });
@@ -170,26 +211,17 @@ app.get('/api/files/download', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// FIXED SHARE ROUTE
 app.get('/api/share/:blobName', verifyFirebaseToken, async (req, res) => {
   const user = req.user;
   const blobName = req.params.blobName;
 
-  console.log('Share route called with blobName:', blobName);
-
-  if (!blobName) {
-    return res.status(400).json({ error: 'Missing blobName' });
-  }
+  if (!blobName) return res.status(400).json({ error: 'Missing blobName' });
 
   try {
     await ensureContainer();
     const expiresOn = new Date(Date.now() + SHARE_READ_HOURS * 60 * 60 * 1000);
     const shareUrl = sasReadUrl(blobName, expiresOn);
-    res.json({ 
-      shareUrl, 
-      expiresAt: expiresOn.toISOString(),
-      message: 'Share link generated successfully' 
-    });
+    res.json({ shareUrl, expiresAt: expiresOn.toISOString() });
   } catch (e) {
     console.error('Share error:', e);
     res.status(500).json({ error: 'Could not create share link' });
