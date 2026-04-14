@@ -14,15 +14,16 @@ import { GoogleAuthProvider, getAuth } from 'firebase/auth'
  * - VITE_FIREBASE_APP_ID
  * - VITE_FIREBASE_MEASUREMENT_ID (optional, for Analytics)
  */
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY as string,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN as string,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID as string,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET as string,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID as string,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID as string,
-  measurementId: (import.meta.env.VITE_FIREBASE_MEASUREMENT_ID as string | undefined) ?? undefined,
-}
+  apiKey: "AIzaSyD6AQev0qTFI4P7TOrTRy4lfTaEb2VAkmw",
+  authDomain: "fileshareapp-30d04.firebaseapp.com",
+  projectId: "fileshareapp-30d04",
+  storageBucket: "fileshareapp-30d04.firebasestorage.app",
+  messagingSenderId: "410388389048",
+  appId: "1:410388389048:web:1ed8aafe029fcb1d35a84d",
+  measurementId: "G-RY8JBVTTTZ"
+};
 
 export const firebaseApp = initializeApp(firebaseConfig)
 export const firebaseAuth = getAuth(firebaseApp)
