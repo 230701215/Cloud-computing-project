@@ -4,13 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-  "dev": "concurrently -k \"npm:dev:api\" \"npm:dev:web\"",
-  "dev:web": "vite",
-  "dev:api": "node --watch server/server.js",
   "build": "vite build",
-  "start": "node server/server.js",
-  "preview": "vite preview",
-  "lint": "eslint ."
+  "start": "node server/server.js"
   },
   "dependencies": {
     "@azure/identity": "^4.13.1",
