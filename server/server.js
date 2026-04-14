@@ -1,5 +1,5 @@
 /**
- * Express API for Azure Blob Storage + Firebase Auth - FINAL FIXED SHARE
+ * Express API for Azure Blob Storage + Firebase Auth - ROUTE ORDER FIXED
  */
 
 import 'dotenv/config';
@@ -146,11 +146,9 @@ const app = express();
 app.use(cors({ origin: FRONTEND_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 
-// ====================== API ROUTES (MUST BE BEFORE STATIC) ======================
+// ====================== API ROUTES - MUST BE BEFORE STATIC ======================
 
-app.get('/api/me', verifyFirebaseToken, (req, res) => {
-  res.json({ user: req.user });
-});
+app.get('/api/me', verifyFirebaseToken, (req, res) => res.json({ user: req.user }));
 
 app.post('/api/sas-upload', verifyFirebaseToken, async (req, res) => {
   const user = req.user;
@@ -174,7 +172,7 @@ app.get('/api/files', verifyFirebaseToken, async (req, res) => {
     const files = await listUserBlobs(req.user.email);
     res.json({ files });
   } catch (e) {
-    console.error('List files error:', e);
+    console.error(e);
     res.status(503).json({ error: 'Could not list files', files: [] });
   }
 });
@@ -210,33 +208,24 @@ app.get('/api/files/download', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// SHARE - Support POST (what frontend is using)
+// SHARE ROUTE - POST support for frontend
 app.post('/api/share', verifyFirebaseToken, async (req, res) => {
-  console.log('POST /api/share called - body:', req.body);
+  console.log('POST /api/share called with body:', req.body);
   const blobName = req.body?.blobName || req.body?.name || req.body?.fileName;
-  if (!blobName) {
-    return res.status(400).json({ error: 'Missing blobName or name in request body' });
-  }
-  return handleShare(blobName, req, res);
-});
+  if (!blobName) return res.status(400).json({ error: 'Missing blobName or name' });
 
-async function handleShare(blobName, req, res) {
-  const user = req.user;
   try {
     await ensureContainer();
     const expiresOn = new Date(Date.now() + SHARE_READ_HOURS * 60 * 60 * 1000);
     const shareUrl = sasReadUrl(blobName, expiresOn);
-    res.json({ 
-      shareUrl, 
-      expiresAt: expiresOn.toISOString() 
-    });
+    res.json({ shareUrl, expiresAt: expiresOn.toISOString() });
   } catch (e) {
-    console.error('Share error:', e);
+    console.error(e);
     res.status(500).json({ error: 'Could not create share link' });
   }
-}
+});
 
-// ====================== STATIC FILES + SPA (MUST BE LAST) ======================
+// ====================== STATIC FILES + SPA - MUST BE LAST ======================
 
 console.log('Current directory:', __dirname);
 console.log('DIST_DIR:', DIST_DIR);
