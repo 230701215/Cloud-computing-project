@@ -1,5 +1,5 @@
 /**
- * Express API for Azure Blob Storage + Firebase Auth - STABLE FINAL VERSION
+ * Express API for Azure Blob Storage + Firebase Auth - BLOB NAME DECODE FIXED
  */
 
 import 'dotenv/config';
@@ -86,7 +86,7 @@ async function deleteBlob(blobName) {
 function sasReadUrl(blobName, expiresOn) {
   const { blobService, credential } = getStorage();
   const container = blobService.getContainerClient(CONTAINER);
-  const blob = container.getBlockBlobClient(blobName);
+  const blob = container.getBlockBlobClient(blobName);   // Use exact name
   const startsOn = new Date(Date.now() - 5 * 60 * 1000);
 
   const sas = generateBlobSASQueryParameters({
@@ -208,16 +208,21 @@ app.get('/api/files/download', verifyFirebaseToken, async (req, res) => {
   }
 });
 
+// SHARE ROUTE - Decode the blobName properly
 app.post('/api/share/:blobName', verifyFirebaseToken, async (req, res) => {
-  console.log('Share POST called with blobName:', req.params.blobName);
   let blobName = req.params.blobName;
+  console.log('Share POST called with raw blobName:', blobName);
 
-  // Decode if it's URL-encoded
+  // Decode URL-encoded blob name (this is the key fix)
   try {
     blobName = decodeURIComponent(blobName);
   } catch (e) {
     console.log('Decode failed, using as-is');
   }
+
+  console.log('Decoded blobName for SAS:', blobName);
+
+  if (!blobName) return res.status(400).json({ error: 'Missing blobName' });
 
   try {
     await ensureContainer();
@@ -225,7 +230,7 @@ app.post('/api/share/:blobName', verifyFirebaseToken, async (req, res) => {
     const shareUrl = sasReadUrl(blobName, expiresOn);
     res.json({ shareUrl, expiresAt: expiresOn.toISOString() });
   } catch (e) {
-    console.error(e);
+    console.error('Share error:', e);
     res.status(500).json({ error: 'Could not create share link' });
   }
 });
