@@ -1,5 +1,5 @@
 /**
- * Express API for Azure Blob Storage + Firebase Auth - FINAL SHARE FIX
+ * Express API for Azure Blob Storage + Firebase Auth - SHARE LINK FIXED
  */
 
 import 'dotenv/config';
@@ -86,12 +86,12 @@ async function deleteBlob(blobName) {
 function sasReadUrl(blobName, expiresOn) {
   const { blobService, credential } = getStorage();
   const container = blobService.getContainerClient(CONTAINER);
-  const blob = container.getBlockBlobClient(blobName);
+  const blob = container.getBlockBlobClient(blobName);   // Use exact blobName
   const startsOn = new Date(Date.now() - 5 * 60 * 1000);
 
   const sas = generateBlobSASQueryParameters({
     containerName: CONTAINER,
-    blobName,
+    blobName,   // exact name
     permissions: BlobSASPermissions.parse('r'),
     startsOn,
     expiresOn,
@@ -99,25 +99,6 @@ function sasReadUrl(blobName, expiresOn) {
   }, credential).toString();
 
   return `${blob.url}?${sas}`;
-}
-
-function sasWriteUrl(blobName, expiresMsFromNow) {
-  const { blobService, credential } = getStorage();
-  const container = blobService.getContainerClient(CONTAINER);
-  const blob = container.getBlockBlobClient(blobName);
-  const startsOn = new Date(Date.now() - 5 * 60 * 1000);
-  const expiresOn = new Date(Date.now() + expiresMsFromNow);
-
-  const sas = generateBlobSASQueryParameters({
-    containerName: CONTAINER,
-    blobName,
-    permissions: BlobSASPermissions.parse('cw'),
-    startsOn,
-    expiresOn,
-    protocol: SASProtocol.Https,
-  }, credential).toString();
-
-  return { uploadUrl: `${blob.url}?${sas}`, expiresOn };
 }
 
 // Firebase Token Verification Middleware
@@ -146,8 +127,7 @@ const app = express();
 app.use(cors({ origin: FRONTEND_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 
-// ====================== API ROUTES - BEFORE STATIC ======================
-
+// API Routes
 app.get('/api/me', verifyFirebaseToken, (req, res) => res.json({ user: req.user }));
 
 app.post('/api/sas-upload', verifyFirebaseToken, async (req, res) => {
@@ -208,10 +188,10 @@ app.get('/api/files/download', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// FIXED SHARE ROUTE - handles POST /api/share/long-blob-name
+// Share Route - Handles the long encoded blob name
 app.post('/api/share/:blobName', verifyFirebaseToken, async (req, res) => {
-  console.log('POST /api/share/:blobName called - blobName:', req.params.blobName);
-  const blobName = req.params.blobName;
+  console.log('Share POST called with blobName:', req.params.blobName);
+  const blobName = decodeURIComponent(req.params.blobName);   // Decode if needed
   if (!blobName) return res.status(400).json({ error: 'Missing blobName' });
 
   try {
@@ -225,8 +205,7 @@ app.post('/api/share/:blobName', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// ====================== STATIC + SPA - LAST ======================
-
+// Static + SPA
 console.log('Current directory:', __dirname);
 console.log('DIST_DIR:', DIST_DIR);
 console.log('dist exists?', fs.existsSync(DIST_DIR));
