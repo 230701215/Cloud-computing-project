@@ -1,5 +1,5 @@
 /**
- * Express API for Azure Blob Storage + Firebase Auth - STABLE FULL VERSION
+ * Express API for Azure Blob Storage + Firebase Auth - SHARE DEBUG VERSION
  */
 
 import 'dotenv/config';
@@ -211,22 +211,39 @@ app.get('/api/files/download', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-app.get('/api/share/:blobName', verifyFirebaseToken, async (req, res) => {
-  const user = req.user;
-  const blobName = req.params.blobName;
+// IMPROVED SHARE ROUTE - handles both /api/share/:blobName and query param
+app.get('/api/share', verifyFirebaseToken, async (req, res) => {
+  console.log('Share route called with query:', req.query);
+  const blobName = req.query.name || req.query.blobName;
+  if (!blobName) return res.status(400).json({ error: 'Missing file name' });
 
+  return handleShare(blobName, req, res);
+});
+
+app.get('/api/share/:blobName', verifyFirebaseToken, async (req, res) => {
+  console.log('Share route called with param:', req.params.blobName);
+  const blobName = req.params.blobName;
+  return handleShare(blobName, req, res);
+});
+
+async function handleShare(blobName, req, res) {
+  const user = req.user;
   if (!blobName) return res.status(400).json({ error: 'Missing blobName' });
 
   try {
     await ensureContainer();
     const expiresOn = new Date(Date.now() + SHARE_READ_HOURS * 60 * 60 * 1000);
     const shareUrl = sasReadUrl(blobName, expiresOn);
-    res.json({ shareUrl, expiresAt: expiresOn.toISOString() });
+    res.json({ 
+      shareUrl, 
+      expiresAt: expiresOn.toISOString(),
+      message: 'Share link generated' 
+    });
   } catch (e) {
     console.error('Share error:', e);
     res.status(500).json({ error: 'Could not create share link' });
   }
-});
+}
 
 // ====================== STATIC + SPA ======================
 
@@ -238,7 +255,7 @@ app.use(express.static(DIST_DIR));
 
 app.use((req, res) => {
   if (req.path.startsWith('/api')) {
-    console.log('API route not found:', req.method, req.path);
+    console.log('API route not found:', req.method, req.path, 'query:', req.query);
     return res.status(404).json({ error: 'API route not found', path: req.path });
   }
   res.sendFile(path.join(DIST_DIR, 'index.html'));
