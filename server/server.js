@@ -1,9 +1,8 @@
 /**
- * Express API for Azure Blob Storage + Firebase Auth - SHARE POST FIXED
+ * Express API for Azure Blob Storage + Firebase Auth - FINAL FIXED SHARE
  */
 
 import 'dotenv/config';
-import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
@@ -147,7 +146,7 @@ const app = express();
 app.use(cors({ origin: FRONTEND_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 
-// ====================== API ROUTES ======================
+// ====================== API ROUTES (MUST BE BEFORE STATIC) ======================
 
 app.get('/api/me', verifyFirebaseToken, (req, res) => {
   res.json({ user: req.user });
@@ -211,31 +210,18 @@ app.get('/api/files/download', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// SHARE - Support both GET and POST (frontend is using POST)
+// SHARE - Support POST (what frontend is using)
 app.post('/api/share', verifyFirebaseToken, async (req, res) => {
-  console.log('POST /api/share called with body:', req.body);
-  const blobName = req.body?.blobName || req.body?.name || req.query?.name;
-  return handleShare(blobName, req, res);
-});
-
-app.get('/api/share', verifyFirebaseToken, async (req, res) => {
-  console.log('GET /api/share called with query:', req.query);
-  const blobName = req.query.name || req.query.blobName;
-  return handleShare(blobName, req, res);
-});
-
-app.get('/api/share/:blobName', verifyFirebaseToken, async (req, res) => {
-  console.log('GET /api/share/:blobName called with param:', req.params.blobName);
-  const blobName = req.params.blobName;
+  console.log('POST /api/share called - body:', req.body);
+  const blobName = req.body?.blobName || req.body?.name || req.body?.fileName;
+  if (!blobName) {
+    return res.status(400).json({ error: 'Missing blobName or name in request body' });
+  }
   return handleShare(blobName, req, res);
 });
 
 async function handleShare(blobName, req, res) {
   const user = req.user;
-  if (!blobName) {
-    return res.status(400).json({ error: 'Missing blobName or name' });
-  }
-
   try {
     await ensureContainer();
     const expiresOn = new Date(Date.now() + SHARE_READ_HOURS * 60 * 60 * 1000);
@@ -250,7 +236,7 @@ async function handleShare(blobName, req, res) {
   }
 }
 
-// ====================== STATIC + SPA ======================
+// ====================== STATIC FILES + SPA (MUST BE LAST) ======================
 
 console.log('Current directory:', __dirname);
 console.log('DIST_DIR:', DIST_DIR);
@@ -260,7 +246,7 @@ app.use(express.static(DIST_DIR));
 
 app.use((req, res) => {
   if (req.path.startsWith('/api')) {
-    console.log('API route not found:', req.method, req.path);
+    console.log('Catch-all hit for:', req.method, req.path);
     return res.status(404).json({ error: 'API route not found', path: req.path });
   }
   res.sendFile(path.join(DIST_DIR, 'index.html'));
