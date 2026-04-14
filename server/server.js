@@ -1,5 +1,5 @@
 /**
- * Express API for Azure Blob Storage + Firebase Auth - FIXED VERSION
+ * Express API for Azure Blob Storage + Firebase Auth - COMPLETE VERSION
  */
 
 import 'dotenv/config';
@@ -28,7 +28,7 @@ const CONTAINER = process.env.AZURE_STORAGE_CONTAINER ?? 'files';
 const UPLOAD_SAS_MINUTES = 15;
 const SHARE_READ_HOURS = 24;
 
-// --- in-memory password-protected shares ---
+// In-memory share store
 const shareStore = new Map();
 
 function hashPassword(pw) {
@@ -42,7 +42,7 @@ function consumeShareIfExpired() {
   }
 }
 
-// --- Storage Setup ---
+// Storage Setup
 let storageCache = null;
 
 function getStorage() {
@@ -59,7 +59,7 @@ function getStorage() {
 
   const account = parts.accountname;
   const key = parts.accountkey;
-  if (!account || !key) throw new Error('Could not parse storage account name/key');
+  if (!account || !key) throw new Error('Could not parse storage account');
 
   const credential = new StorageSharedKeyCredential(account, key);
   storageCache = { blobService, credential };
@@ -68,14 +68,6 @@ function getStorage() {
 
 function userPrefix(email) {
   return `${email}/`;
-}
-
-function assertOwnsBlob(email, blobName) {
-  if (!blobName.startsWith(userPrefix(email))) {
-    const err = new Error('Forbidden');
-    err.status = 403;
-    throw err;
-  }
 }
 
 async function ensureContainer() {
@@ -150,15 +142,11 @@ async function verifyFirebaseToken(req, res, next) {
     const match = /^Bearer\s+(.+)$/i.exec(header);
     const token = match?.[1];
 
-    if (!token) {
-      return res.status(401).json({ error: 'Missing Authorization Bearer token' });
-    }
+    if (!token) return res.status(401).json({ error: 'Missing Authorization Bearer token' });
 
     const admin = getAdmin();
     const decoded = await admin.auth().verifyIdToken(token);
-    if (!decoded.email) {
-      return res.status(401).json({ error: 'Token missing email claim' });
-    }
+    if (!decoded.email) return res.status(401).json({ error: 'Token missing email' });
 
     req.user = decoded;
     next();
@@ -170,11 +158,7 @@ async function verifyFirebaseToken(req, res, next) {
 
 const app = express();
 
-app.use(cors({
-  origin: FRONTEND_ORIGIN,
-  credentials: true,
-}));
-
+app.use(cors({ origin: FRONTEND_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 
 // ====================== API ROUTES ======================
@@ -194,9 +178,7 @@ app.post('/api/sas-upload', verifyFirebaseToken, async (req, res) => {
   const user = req.user;
   const fileName = typeof req.body?.fileName === 'string' ? req.body.fileName : '';
 
-  if (!fileName) {
-    return res.status(400).json({ error: 'Invalid fileName' });
-  }
+  if (!fileName) return res.status(400).json({ error: 'Invalid fileName' });
 
   try {
     await ensureContainer();
@@ -220,36 +202,71 @@ app.get('/api/files', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// ====================== STATIC FILES + SPA ROUTING ======================
+app.delete('/api/files', verifyFirebaseToken, async (req, res) => {
+  const user = req.user;
+  const blobName = typeof req.query.name === 'string' ? req.query.name : '';
+  if (!blobName) return res.status(400).json({ error: 'Missing name' });
+
+  try {
+    assertOwnsBlob(user.email, blobName);
+    await ensureContainer();
+    await deleteBlob(blobName);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    const status = e.status ?? 500;
+    res.status(status).json({ error: 'Delete failed' });
+  }
+});
+
+app.get('/api/files/download', verifyFirebaseToken, async (req, res) => {
+  const user = req.user;
+  const blobName = typeof req.query.name === 'string' ? req.query.name : '';
+  if (!blobName) return res.status(400).json({ error: 'Missing name' });
+
+  try {
+    assertOwnsBlob(user.email, blobName);
+    await ensureContainer();
+    const expiresOn = new Date(Date.now() + 60 * 60 * 1000);
+    const url = sasReadUrl(blobName, expiresOn);
+    res.json({ url, expiresAt: expiresOn.toISOString() });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Download failed' });
+  }
+});
+
+// Share routes (basic version)
+app.get('/api/share/:blobName', verifyFirebaseToken, async (req, res) => {
+  const user = req.user;
+  const blobName = req.params.blobName;
+  try {
+    assertOwnsBlob(user.email, blobName);
+    await ensureContainer();
+    const expiresOn = new Date(Date.now() + SHARE_READ_HOURS * 60 * 60 * 1000);
+    const shareUrl = sasReadUrl(blobName, expiresOn);
+    res.json({ shareUrl, expiresAt: expiresOn.toISOString() });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Could not create share URL' });
+  }
+});
+
+// ====================== STATIC + SPA ======================
 
 console.log('Current directory:', __dirname);
 console.log('DIST_DIR:', DIST_DIR);
-console.log('dist folder exists?', fs.existsSync(DIST_DIR));
+console.log('dist exists?', fs.existsSync(DIST_DIR));
 
-// Serve React build
 app.use(express.static(DIST_DIR));
 
-// Safe catch-all for React SPA
 app.use((req, res) => {
   if (req.path.startsWith('/api')) {
-    console.log('API route not found:', req.path);
-    return res.status(404).json({ 
-      error: 'API route not found', 
-      path: req.path 
-    });
+    return res.status(404).json({ error: 'API route not found', path: req.path });
   }
-
-  console.log(`Serving index.html for path: ${req.path}`);
-  res.sendFile(path.join(DIST_DIR, 'index.html'), (err) => {
-    if (err) {
-      console.error('Error serving index.html:', err);
-      res.status(500).send('React build not found.');
-    }
-  });
+  res.sendFile(path.join(DIST_DIR, 'index.html'));
 });
 
-// Start Server
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Server is running on port ${PORT}`);
-  console.log(`📁 Serving static files from: ${DIST_DIR}`);
+  console.log(`✅ Server running on port ${PORT}`);
 });
