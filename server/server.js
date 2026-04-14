@@ -1,5 +1,5 @@
 /**
- * Express API for Azure Blob Storage + Firebase Auth - SHARE DEBUG VERSION
+ * Express API for Azure Blob Storage + Firebase Auth - SHARE POST FIXED
  */
 
 import 'dotenv/config';
@@ -211,24 +211,30 @@ app.get('/api/files/download', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// IMPROVED SHARE ROUTE - handles both /api/share/:blobName and query param
-app.get('/api/share', verifyFirebaseToken, async (req, res) => {
-  console.log('Share route called with query:', req.query);
-  const blobName = req.query.name || req.query.blobName;
-  if (!blobName) return res.status(400).json({ error: 'Missing file name' });
+// SHARE - Support both GET and POST (frontend is using POST)
+app.post('/api/share', verifyFirebaseToken, async (req, res) => {
+  console.log('POST /api/share called with body:', req.body);
+  const blobName = req.body?.blobName || req.body?.name || req.query?.name;
+  return handleShare(blobName, req, res);
+});
 
+app.get('/api/share', verifyFirebaseToken, async (req, res) => {
+  console.log('GET /api/share called with query:', req.query);
+  const blobName = req.query.name || req.query.blobName;
   return handleShare(blobName, req, res);
 });
 
 app.get('/api/share/:blobName', verifyFirebaseToken, async (req, res) => {
-  console.log('Share route called with param:', req.params.blobName);
+  console.log('GET /api/share/:blobName called with param:', req.params.blobName);
   const blobName = req.params.blobName;
   return handleShare(blobName, req, res);
 });
 
 async function handleShare(blobName, req, res) {
   const user = req.user;
-  if (!blobName) return res.status(400).json({ error: 'Missing blobName' });
+  if (!blobName) {
+    return res.status(400).json({ error: 'Missing blobName or name' });
+  }
 
   try {
     await ensureContainer();
@@ -236,8 +242,7 @@ async function handleShare(blobName, req, res) {
     const shareUrl = sasReadUrl(blobName, expiresOn);
     res.json({ 
       shareUrl, 
-      expiresAt: expiresOn.toISOString(),
-      message: 'Share link generated' 
+      expiresAt: expiresOn.toISOString() 
     });
   } catch (e) {
     console.error('Share error:', e);
@@ -255,7 +260,7 @@ app.use(express.static(DIST_DIR));
 
 app.use((req, res) => {
   if (req.path.startsWith('/api')) {
-    console.log('API route not found:', req.method, req.path, 'query:', req.query);
+    console.log('API route not found:', req.method, req.path);
     return res.status(404).json({ error: 'API route not found', path: req.path });
   }
   res.sendFile(path.join(DIST_DIR, 'index.html'));
