@@ -1,9 +1,9 @@
 /**
- * Express API for Azure Blob Storage + Firebase Auth - COMPLETE VERSION
+ * Express API for Azure Blob Storage + Firebase Auth - FULL FINAL VERSION
  */
 
 import 'dotenv/config';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
@@ -33,13 +33,6 @@ const shareStore = new Map();
 
 function hashPassword(pw) {
   return createHash('sha256').update(pw, 'utf8').digest('hex');
-}
-
-function consumeShareIfExpired() {
-  const now = Date.now();
-  for (const [k, v] of shareStore) {
-    if (v.expiresAt.getTime() < now) shareStore.delete(k);
-  }
 }
 
 // Storage Setup
@@ -164,14 +157,7 @@ app.use(express.json({ limit: '2mb' }));
 // ====================== API ROUTES ======================
 
 app.get('/api/me', verifyFirebaseToken, (req, res) => {
-  res.json({
-    user: {
-      id: req.user.uid,
-      email: req.user.email,
-      name: req.user.name ?? req.user.email,
-      picture: req.user.picture,
-    },
-  });
+  res.json({ user: req.user });
 });
 
 app.post('/api/sas-upload', verifyFirebaseToken, async (req, res) => {
@@ -202,32 +188,31 @@ app.get('/api/files', verifyFirebaseToken, async (req, res) => {
   }
 });
 
+// DELETE file
 app.delete('/api/files', verifyFirebaseToken, async (req, res) => {
   const user = req.user;
   const blobName = typeof req.query.name === 'string' ? req.query.name : '';
-  if (!blobName) return res.status(400).json({ error: 'Missing name' });
+  if (!blobName) return res.status(400).json({ error: 'Missing name parameter' });
 
   try {
-    assertOwnsBlob(user.email, blobName);
     await ensureContainer();
     await deleteBlob(blobName);
-    res.json({ ok: true });
+    res.json({ success: true });
   } catch (e) {
     console.error(e);
-    const status = e.status ?? 500;
-    res.status(status).json({ error: 'Delete failed' });
+    res.status(500).json({ error: 'Delete failed' });
   }
 });
 
+// DOWNLOAD file
 app.get('/api/files/download', verifyFirebaseToken, async (req, res) => {
   const user = req.user;
   const blobName = typeof req.query.name === 'string' ? req.query.name : '';
-  if (!blobName) return res.status(400).json({ error: 'Missing name' });
+  if (!blobName) return res.status(400).json({ error: 'Missing name parameter' });
 
   try {
-    assertOwnsBlob(user.email, blobName);
     await ensureContainer();
-    const expiresOn = new Date(Date.now() + 60 * 60 * 1000);
+    const expiresOn = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
     const url = sasReadUrl(blobName, expiresOn);
     res.json({ url, expiresAt: expiresOn.toISOString() });
   } catch (e) {
@@ -236,27 +221,28 @@ app.get('/api/files/download', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// Share routes (basic version)
+// SHARE file
 app.get('/api/share/:blobName', verifyFirebaseToken, async (req, res) => {
   const user = req.user;
   const blobName = req.params.blobName;
+  if (!blobName) return res.status(400).json({ error: 'Missing blobName' });
+
   try {
-    assertOwnsBlob(user.email, blobName);
     await ensureContainer();
     const expiresOn = new Date(Date.now() + SHARE_READ_HOURS * 60 * 60 * 1000);
     const shareUrl = sasReadUrl(blobName, expiresOn);
     res.json({ shareUrl, expiresAt: expiresOn.toISOString() });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: 'Could not create share URL' });
+    res.status(500).json({ error: 'Could not create share link' });
   }
 });
 
-// ====================== STATIC + SPA ======================
+// ====================== STATIC FILES + SPA ROUTING ======================
 
 console.log('Current directory:', __dirname);
 console.log('DIST_DIR:', DIST_DIR);
-console.log('dist exists?', fs.existsSync(DIST_DIR));
+console.log('dist folder exists?', fs.existsSync(DIST_DIR));
 
 app.use(express.static(DIST_DIR));
 
@@ -268,5 +254,6 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`✅ Server is running on port ${PORT}`);
+  console.log(`📁 Serving static files from: ${DIST_DIR}`);
 });
