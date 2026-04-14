@@ -1,5 +1,5 @@
 /**
- * Express API for Azure Blob Storage + Firebase Auth - ROUTE ORDER FIXED
+ * Express API for Azure Blob Storage + Firebase Auth - FINAL SHARE FIX
  */
 
 import 'dotenv/config';
@@ -146,7 +146,7 @@ const app = express();
 app.use(cors({ origin: FRONTEND_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '2mb' }));
 
-// ====================== API ROUTES - MUST BE BEFORE STATIC ======================
+// ====================== API ROUTES - BEFORE STATIC ======================
 
 app.get('/api/me', verifyFirebaseToken, (req, res) => res.json({ user: req.user }));
 
@@ -208,11 +208,11 @@ app.get('/api/files/download', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// SHARE ROUTE - POST support for frontend
-app.post('/api/share', verifyFirebaseToken, async (req, res) => {
-  console.log('POST /api/share called with body:', req.body);
-  const blobName = req.body?.blobName || req.body?.name || req.body?.fileName;
-  if (!blobName) return res.status(400).json({ error: 'Missing blobName or name' });
+// FIXED SHARE ROUTE - handles POST /api/share/long-blob-name
+app.post('/api/share/:blobName', verifyFirebaseToken, async (req, res) => {
+  console.log('POST /api/share/:blobName called - blobName:', req.params.blobName);
+  const blobName = req.params.blobName;
+  if (!blobName) return res.status(400).json({ error: 'Missing blobName' });
 
   try {
     await ensureContainer();
@@ -225,7 +225,7 @@ app.post('/api/share', verifyFirebaseToken, async (req, res) => {
   }
 });
 
-// ====================== STATIC FILES + SPA - MUST BE LAST ======================
+// ====================== STATIC + SPA - LAST ======================
 
 console.log('Current directory:', __dirname);
 console.log('DIST_DIR:', DIST_DIR);
